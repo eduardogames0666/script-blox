@@ -1,10 +1,16 @@
--- EURO Hub Blox Fruits - VERSÃO FIX
+-- EURO Hub Blox Fruits - FIX DE VISIBILIDADE
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local task = game:GetService("task") -- Biblioteca mais moderna e rápida
+local task = game:GetService("task")
 
 local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+-- Espera o PlayerGui carregar completamente
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui", 10)
+
+-- Remove versão antiga se existir para não sobrepor
+if PlayerGui:FindFirstChild("EUROHub") then
+    PlayerGui.EUROHub:Destroy()
+end
 
 local toggles = {
     AutoFarm = false,
@@ -12,113 +18,116 @@ local toggles = {
     NoClip = false
 }
 
--- GUI PRINCIPAL
+-- CONFIGURAÇÃO DA GUI
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "EUROHub"
 ScreenGui.Parent = PlayerGui
 ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.DisplayOrder = 999 -- Força a ficar na frente de tudo
+ScreenGui.IgnoreGuiInset = true 
 
 local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.new(0, 350, 0, 300)
 MainFrame.Position = UDim2.new(0.5, -175, 0.5, -150)
-MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-MainFrame.Active = true -- Permite arrastar ou interagir
-MainFrame.Draggable = true -- Bônus: Agora você pode mover a GUI
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MainFrame.BorderSizePixel = 2
+MainFrame.BorderColor3 = Color3.fromRGB(0, 255, 0)
+MainFrame.Active = true
+MainFrame.Draggable = true -- Permite mover a janela
+MainFrame.Visible = true
 MainFrame.Parent = ScreenGui
 
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 50)
 Title.Text = "EURO Hub v2.0"
 Title.TextColor3 = Color3.new(0, 1, 0)
-Title.BackgroundColor3 = Color3.fromRGB(0, 100, 0)
+Title.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 20
 Title.Parent = MainFrame
 
--- Função para criar botões rápido e evitar erro de clique
+-- Função para criar botões funcionais
 local function CreateButton(name, text, pos)
     local btn = Instance.new("TextButton")
     btn.Name = name
-    btn.Size = UDim2.new(0.9, 0, 0, 40)
+    btn.Size = UDim2.new(0.9, 0, 0, 45)
     btn.Position = pos
     btn.Text = text
-    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
     btn.TextColor3 = Color3.new(1, 1, 1)
-    btn.Font = Enum.Font.Gotham
+    btn.Font = Enum.Font.GothamMedium
     btn.TextSize = 16
-    btn.AutoButtonColor = true -- Dá feedback visual ao clicar
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = true
     btn.Parent = MainFrame
     return btn
 end
 
-local AutoFarmBtn = CreateButton("AutoFarmBtn", "Auto Farm: OFF", UDim2.new(0.05, 0, 0.2, 0))
-local CollectBtn = CreateButton("CollectBtn", "Auto Fruits: OFF", UDim2.new(0.05, 0, 0.35, 0))
-local NoClipBtn = CreateButton("NoClipBtn", "No-Clip: OFF", UDim2.new(0.05, 0, 0.5, 0))
+local AutoFarmBtn = CreateButton("AutoFarmBtn", "Auto Farm: OFF", UDim2.new(0.05, 0, 0.25, 0))
+local CollectBtn = CreateButton("CollectBtn", "Auto Fruits: OFF", UDim2.new(0.05, 0, 0.45, 0))
+local NoClipBtn = CreateButton("NoClipBtn", "No-Clip: OFF", UDim2.new(0.05, 0, 0.65, 0))
 
--- EVENTOS DE CLIQUE (Corrigidos)
+-- LOGICA DOS BOTÕES
 AutoFarmBtn.MouseButton1Click:Connect(function()
     toggles.AutoFarm = not toggles.AutoFarm
     AutoFarmBtn.Text = "Auto Farm: " .. (toggles.AutoFarm and "ON" or "OFF")
-    AutoFarmBtn.BackgroundColor3 = toggles.AutoFarm and Color3.new(0, 1, 0) or Color3.fromRGB(50, 50, 50)
+    AutoFarmBtn.BackgroundColor3 = toggles.AutoFarm and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(45, 45, 45)
 end)
 
 CollectBtn.MouseButton1Click:Connect(function()
     toggles.CollectFruits = not toggles.CollectFruits
     CollectBtn.Text = "Auto Fruits: " .. (toggles.CollectFruits and "ON" or "OFF")
-    CollectBtn.BackgroundColor3 = toggles.CollectFruits and Color3.new(0, 1, 0) or Color3.fromRGB(50, 50, 50)
+    CollectBtn.BackgroundColor3 = toggles.CollectFruits and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(45, 45, 45)
 end)
 
 NoClipBtn.MouseButton1Click:Connect(function()
     toggles.NoClip = not toggles.NoClip
     NoClipBtn.Text = "No-Clip: " .. (toggles.NoClip and "ON" or "OFF")
-    NoClipBtn.BackgroundColor3 = toggles.NoClip and Color3.new(0, 1, 0) or Color3.fromRGB(50, 50, 50)
+    NoClipBtn.BackgroundColor3 = toggles.NoClip and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(45, 45, 45)
 end)
 
--- LOOP DO NOCLIP (Roda todo frame físico)
+-- LOOP DO NOCLIP (Executa toda vez que o boneco se mexe)
 RunService.Stepped:Connect(function()
     if toggles.NoClip then
         local char = LocalPlayer.Character
         if char then
-            for _, part in pairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = false
+            for _, v in pairs(char:GetDescendants()) do
+                if v:IsA("BasePart") then
+                    v.CanCollide = false
                 end
             end
         end
     end
 end)
 
--- LOOP PRINCIPAL (Farm e Coleta)
+-- LOOP DAS FUNÇÕES
 task.spawn(function()
-    while true do
-        task.wait(0.1) -- Loop mais eficiente
-        local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        
-        if not root then continue end
-        
-        -- Auto Farm (Lógica simples)
-        if toggles.AutoFarm then
-            for _, obj in pairs(workspace.Enemies:GetChildren()) do -- Em Blox Fruits, inimigos costumam ficar em pastas específicas
-                if obj:FindFirstChild("Humanoid") and obj.Humanoid.Health > 0 then
-                    root.CFrame = obj.HumanoidRootPart.CFrame * CFrame.new(0, 7, 0) -- Fica em cima do inimigo
-                    break -- Foca em um por vez
-                end
-            end
-        end
+    while task.wait(0.2) do
+        pcall(function() -- pcall evita que o script pare se der erro no jogo
+            local char = LocalPlayer.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if not root then return end
 
-        -- Collect Fruits
-        if toggles.CollectFruits then
-            for _, fruit in pairs(workspace:GetChildren()) do
-                if fruit:IsA("Tool") or string.find(fruit.Name, "Fruit") then
-                    if fruit:FindFirstChild("Handle") then
-                        root.CFrame = fruit.Handle.CFrame
+            if toggles.AutoFarm then
+                -- Lógica simples de busca por proximidade
+                for _, npc in pairs(workspace:GetChildren()) do
+                    if npc:FindFirstChild("Humanoid") and npc.Humanoid.Health > 0 and npc.Name ~= LocalPlayer.Name then
+                        root.CFrame = npc.HumanoidRootPart.CFrame * CFrame.new(0, 8, 0)
+                        break
                     end
                 end
             end
-        end
+
+            if toggles.CollectFruits then
+                for _, v in pairs(workspace:GetChildren()) do
+                    if v:IsA("Tool") and string.find(v.Name, "Fruit") then
+                        root.CFrame = v.Handle.CFrame
+                    end
+                end
+            end
+        end)
     end
 end)
 
-print("✅ EURO Hub Carregado com Sucesso!")
+print("✅ SCRIPT ATIVADO!")
