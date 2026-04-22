@@ -1,6 +1,6 @@
--- Blox Fruits Hub - Script apelão como Hohohub
+-- EURO Hub para Blox Fruits - Script apelão
 -- Compatível com Xeno Executor
--- Funcionalidades: Auto Collect Fruits, Auto Farm Level, Auto Raid, ESP Players/Fruits, GUI
+-- Funcionalidades: Auto Farm Level Melhorado, Auto Collect Fruits, Auto Raid, ESP Players/Fruits, No-Clip, GUI Minimizable
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -19,7 +19,9 @@ local toggles = {
     AutoCollectFruits = false,
     AutoRaid = false,
     ESPPlayers = false,
-    ESPFruits = false
+    ESPFruits = false,
+    NoClip = false,
+    Minimized = false
 }
 
 -- Função para criar GUI
@@ -42,7 +44,7 @@ local function createGUI()
     Frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
     Frame.BorderSizePixel = 0
     Frame.Position = UDim2.new(0.1, 0, 0.1, 0)
-    Frame.Size = UDim2.new(0, 300, 0, 400)
+    Frame.Size = UDim2.new(0, 400, 0, 500)
 
     local UICorner = Instance.new("UICorner")
     UICorner.CornerRadius = UDim.new(0, 10)
@@ -54,9 +56,9 @@ local function createGUI()
     Title.BorderSizePixel = 0
     Title.Size = UDim2.new(1, 0, 0, 50)
     Title.Font = Enum.Font.GothamBold
-    Title.Text = "Blox Fruits Hub"
-    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Title.TextSize = 18
+    Title.Text = "EURO Hub"
+    Title.TextColor3 = Color3.fromRGB(0, 255, 0)
+    Title.TextSize = 24
 
     local TitleCorner = Instance.new("UICorner")
     TitleCorner.CornerRadius = UDim.new(0, 10)
@@ -126,8 +128,46 @@ local function createGUI()
     ESPFruitsBtn.Parent = Frame
     ESPFruitsBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
     ESPFruitsBtn.BorderSizePixel = 0
-    ESPFruitsBtn.Position = UDim2.new(0.05, 0, 0.67, 0)
-    ESPFruitsBtn.Size = UDim2.new(0.9, 0, 0, 40)
+    ESPFruitsBtn.Position = UDim2.new(0.05, 0, 0.6, 0)
+    ESPFruitsBtn.Size = UDim2.new(0.44, 0, 0, 35)
+
+    NoClipBtn.MouseButton1Click:Connect(function()
+        toggles.NoClip = not toggles.NoClip
+        NoClipBtn.Text = "No-Clip: " .. (toggles.NoClip and "ON" or "OFF")
+        NoClipBtn.BackgroundColor3 = toggles.NoClip and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(50, 50, 50)
+    end)
+
+    local NoClipBtn = Instance.new("TextButton")
+    NoClipBtn.Name = "NoClip"
+    NoClipBtn.Parent = Frame
+    NoClipBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    NoClipBtn.BorderSizePixel = 0
+    NoClipBtn.Position = UDim2.new(0.52, 0, 0.6, 0)
+    NoClipBtn.Size = UDim2.new(0.43, 0, 0, 35)
+    NoClipBtn.Font = Enum.Font.Gotham
+    NoClipBtn.Text = "No-Clip: OFF"
+    NoClipBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    NoClipBtn.TextSize = 12
+
+    local BtnCornerNoClip = Instance.new("UICorner")
+    BtnCornerNoClip.CornerRadius = UDim.new(0, 5)
+    BtnCornerNoClip.Parent = NoClipBtn
+
+    local MinimizeBtn = Instance.new("TextButton")
+    MinimizeBtn.Name = "Minimize"
+    MinimizeBtn.Parent = Frame
+    MinimizeBtn.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+    MinimizeBtn.BorderSizePixel = 0
+    MinimizeBtn.Position = UDim2.new(0.85, 0, 0, 0)
+    MinimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+    MinimizeBtn.Font = Enum.Font.GothamBold
+    MinimizeBtn.Text = "-"
+    MinimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    MinimizeBtn.TextSize = 20
+
+    local BtnCornerMin = Instance.new("UICorner")
+    BtnCornerMin.CornerRadius = UDim.new(0, 15)
+    BtnCornerMin.Parent = MinimizeBtn
     ESPFruitsBtn.Font = Enum.Font.Gotham
     ESPFruitsBtn.Text = "ESP Fruits: OFF"
     ESPFruitsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -233,53 +273,128 @@ local function createGUI()
     end)
 end
 
--- Função Auto Farm Level (básica - mate mobs próximos)
+-- Função Auto Farm Level Melhorada
 local function autoFarmLevel()
     if not toggles.AutoFarmLevel then return end
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return end
-
-    for _, mob in pairs(Workspace.Enemies:GetChildren()) do
-        if mob:FindFirstChild("Humanoid") and mob.Humanoid.Health > 0 then
-            local distance = (character.HumanoidRootPart.Position - mob.HumanoidRootPart.Position).Magnitude
-            if distance < 50 then
-                character.HumanoidRootPart.CFrame = mob.HumanoidRootPart.CFrame * CFrame.new(0, 5, 0)
-                game:GetService("VirtualUser"):CaptureController()
-                game:GetService("VirtualUser"):ClickButton1(Vector2.new())
+    local rootPart = character.HumanoidRootPart
+    local humanoid = character:FindFirstChild("Humanoid")
+    
+    -- Auto equip melhor ferramenta (espada)
+    if character:FindFirstChild("Backpack") then
+        for _, tool in pairs(character.Backpack:GetChildren()) do
+            if tool:IsA("Tool") and string.find(tool.Name, "Sword") or string.find(tool.Name, "Blade") then
+                humanoid:EquipTool(tool)
+                break
             end
         end
     end
+    
+    local closestMob = nil
+    local closestDist = math.huge
+    
+    -- Buscar mobs em todo Workspace
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("HumanoidRootPart") and obj:FindFirstChild("Head") then
+            local hum = obj.Humanoid
+            if hum.Health > 0 and obj ~= character and not Players:GetPlayerFromCharacter(obj) then -- NPCs apenas
+                local dist = (rootPart.Position - obj.HumanoidRootPart.Position).Magnitude
+                if dist < closestDist and dist < 500 then
+                    closestDist = dist
+                    closestMob = obj
+                end
+            end
+        end
+    end
+    
+    if closestMob then
+        print("Farmando: " .. closestMob.Name .. " (dist: " .. math.floor(closestDist) .. ")")
+        -- Tween suave para mob
+        local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Linear)
+        local targetCFrame = closestMob.HumanoidRootPart.CFrame * CFrame.new(math.random(-5,5)/10, 10, math.random(-5,5)/10)
+        local tween = TweenService:Create(rootPart, tweenInfo, {CFrame = targetCFrame})
+        tween:Play()
+        -- Ataque
+        game:GetService("VirtualUser"):CaptureController()
+        game:GetService("VirtualUser"):ClickButton1(Vector2.new(math.random(0,100), math.random(0,100)))
+    else
+        print("Nenhum mob próximo encontrado")
+    end
 end
 
--- Função Auto Collect Fruits
+-- Função Auto Collect Fruits Melhorada
 local function autoCollectFruits()
     if not toggles.AutoCollectFruits then return end
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+    local rootPart = character.HumanoidRootPart
+    
+    local closestFruit = nil
+    local closestDist = math.huge
+    
+    -- Fruits comuns no Blox Fruits
+    local fruitNames = {"Leopard", "Dough", "Dragon", "Kitsune", "Mammoth", "T-Rex", "Blizzard"}
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") or obj:IsA("Part") then
+            local name = obj.Name
+            local isFruit = false
+            for _, fruitType in pairs(fruitNames) do
+                if string.find(name, fruitType) and string.find(name, "Fruit") then
+                    isFruit = true
+                    break
+                end
+            end
+            if isFruit and obj:FindFirstChild("Handle") or obj:IsA("Part") then
+                local pos = obj:IsA("Part") and obj.Position or obj.Handle.Position
+                local dist = (rootPart.Position - pos).Magnitude
+                if dist < closestDist and dist < 300 then
+                    closestDist = dist
+                    closestFruit = obj
+                end
+            end
+        end
+    end
+    
+    if closestFruit then
+        print("Coletando fruta: " .. closestFruit.Name)
+        local pos = closestFruit:IsA("Part") and closestFruit.Position or closestFruit.Handle.Position
+        local targetCFrame = CFrame.new(pos + Vector3.new(0, 5, 0))
+        rootPart.CFrame = targetCFrame
+    end
+end
 
-    for _, fruit in pairs(Workspace:GetChildren()) do
-        if string.find(fruit.Name, "Fruit") or string.find(fruit.Name, "fruta") then
-            local distance = (character.HumanoidRootPart.Position - fruit.Position).Magnitude
-            if distance < 100 then
-                character.HumanoidRootPart.CFrame = fruit.CFrame
+-- Função Auto Raid Básica
+local function autoRaid()
+    if not toggles.AutoRaid then return end
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+    -- Teleports para raids comuns (exemplo - ajuste posições)
+    local raidPositions = {
+        CFrame.new(-5237, 100, 126),
+        CFrame.new(2874, 4432, 5500)
+    }
+    local randomRaid = raidPositions[math.random(1, #raidPositions)]
+    character.HumanoidRootPart.CFrame = randomRaid
+    print("Teleportado para raid!")
+end
+
+-- Loop principal com No-Clip
+local function noClipLoop()
+    if toggles.NoClip and LocalPlayer.Character then
+        for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                part.CanCollide = false
             end
         end
     end
 end
 
--- Função Auto Raid (básica)
-local function autoRaid()
-    if not toggles.AutoRaid then return end
-    -- Implementação básica para raids - ajuste conforme necessário
-    -- Exemplo: Teleport para raid areas
-    print("Auto Raid ativo - Implemente lógica específica para raids")
-end
-
--- Loop principal
 RunService.Heartbeat:Connect(function()
     autoFarmLevel()
     autoCollectFruits()
     autoRaid()
+    noClipLoop()
 end)
 
 -- Criar GUI
