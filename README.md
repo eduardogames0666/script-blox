@@ -1,247 +1,126 @@
---[[
-    EURO HUB — Versão Corrigida e Completa
-    Compatibilidade: Xeno, Synapse, Fluxus, etc.
-]]
+local Library =
+loadstring(game:HttpGet("https://raw.githubusercontent.com/AnhTuanDzai-Hub/UIMenu/refs/heads/main/thanhipia.lua"))()
 
--- ==================== EXECUTOR COMPAT ====================
-if not game:IsLoaded() then game:IsLoaded():Wait() end
+local Window = Library:CreateWindow('Tuấn Anh IOS')
 
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local CoreGui = game:GetService("CoreGui")
-
-local player = Players.LocalPlayer
-local pgui = player:WaitForChild("PlayerGui")
-
--- Função para detectar onde injetar a UI (Melhora compatibilidade com Xeno)
-local function getSafeParent()
-    local success, target = pcall(function() return gethui() end)
-    if success and target then return target end
-    return CoreGui
-end
-
-local uiParent = getSafeParent()
-
--- Evitar duplicação
-if uiParent:FindFirstChild("EuroHub") then
-    uiParent:FindFirstChild("EuroHub"):Destroy()
-end
-
--- ==================== VARS GLOBAIS ====================
-local toggles = {}
-local connections = {}
-local combatTool = nil
-local attackSpeed = 0.1
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-
-local questTable = {
-    [1] = {npcPos = CFrame.new(100, 20, 100), questId = "StarterQuest", mobArea = CFrame.new(120, 20, 120)},
-    [50] = {npcPos = CFrame.new(500, 50, 500), questId = "DesertQuest", mobArea = CFrame.new(520, 50, 520)},
+local Tab = {
+    Tab_1 = Window:addTab('#Home'),
+    Tab_Setting = Window:addTab('#Settings'),
+    Tab_2 = Window:addTab('#Main Farm'),
+    Tab_SubFarm = Window:addTab('#Subs Farm'),
+    Tab_3 = Window:addTab('#Quest'),
+    Tab_Sea = Window:addTab('#Sea Event'),
+    Tab_RaceV4 = Window:addTab('#Race V4'),
+    Tab_4 = Window:addTab('#Raids'),
+    Tab_Combat = Window:addTab('#PVP'),
+    Tab_5 = Window:addTab('#Teleport & Status'),
+    Tab_6 = Window:addTab('#Shop'),
+    Tab_7 = Window:addTab('#Misc')
 }
 
--- ==================== FUNÇÕES UTILITÁRIAS ====================
-local function updateCharacter(newChar)
-    character = newChar or player.Character
-    if character then
-        humanoidRootPart = character:WaitForChild("HumanoidRootPart", 5)
+-- HOME
+local Home_Right = Tab.Tab_1:addSection()
+local Main_Home = Home_Right:addMenu("#Home")
+
+getgenv().WalkSpeedValue = 26
+Main_Home:addTextbox("Speed Hack", getgenv().WalkSpeedValue, function(speedfunc)
+    getgenv().WalkSpeedValue = speedfunc
+    if getgenv().WalkSpeedValue then
+        local Player = game:GetService("Players").LocalPlayer
+
+        Player.Character.Humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+            Player.Character.Humanoid.WalkSpeed = getgenv().WalkSpeedValue
+        end)
+
+        Player.Character.Humanoid.WalkSpeed = getgenv().WalkSpeedValue
     end
-end
-player.CharacterAdded:Connect(updateCharacter)
+end)
 
-local function equipTool(toolName)
-    if not character then return end
-    local tool = player.Backpack:FindFirstChild(toolName) or character:FindFirstChild(toolName)
-    if tool and tool:IsA("Tool") then
-        character.Humanoid:EquipTool(tool)
-        combatTool = tool
+getgenv().JumpValue = 50
+Main_Home:addTextbox("Jump Hack", getgenv().JumpValue, function(jumpfunc)
+    getgenv().JumpValue = jumpfunc
+    if getgenv().JumpValue then
+        game:GetService("Players").LocalPlayer.Character.Humanoid.JumpPower = getgenv().JumpValue
     end
-end
+end)
 
-local function teleportTo(pos)
-    if humanoidRootPart then
-        humanoidRootPart.CFrame = pos + Vector3.new(0, 10, 0)
-    end
-end
+-- ANTI AFK
+getgenv().AntiAFK = true
+Main_Home:addToggle("Anti AFK", getgenv().AntiAFK, function(Value)
+    getgenv().AntiAFK = Value
+end)
 
-local function fastAttack()
-    if combatTool and character then
-        pcall(function() combatTool:Activate() end)
-    end
-end
-
--- ==================== DESIGN TOKENS ====================
-local C = {
-    bg = Color3.fromRGB(10, 10, 12),
-    card = Color3.fromRGB(18, 18, 22),
-    surface = Color3.fromRGB(26, 26, 32),
-    border = Color3.fromRGB(40, 40, 48),
-    text = Color3.fromRGB(235, 235, 240),
-    primary = Color3.fromRGB(255, 0, 0),
-    muted = Color3.fromRGB(140, 140, 150),
-}
-
-local FONT_BOLD = Enum.Font.GothamBold
-local FONT_REG = Enum.Font.Gotham
-
--- ==================== INTERFACE RAIZ ====================
-local screen = Instance.new("ScreenGui")
-screen.Name = "EuroHub"
-screen.ResetOnSpawn = false
-screen.Parent = uiParent
-
--- Helper: UI Corner
-local function corner(p, r)
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, r or 8)
-    c.Parent = p
-end
-
--- ==================== JANELA PRINCIPAL ====================
-local main = Instance.new("Frame")
-main.Name = "Main"
-main.Size = UDim2.fromOffset(600, 400)
-main.Position = UDim2.fromScale(0.5, 0.5)
-main.AnchorPoint = Vector2.new(0.5, 0.5)
-main.BackgroundColor3 = C.card
-main.BorderSizePixel = 0
-main.Parent = screen
-corner(main, 10)
-
--- Header (Arrastável)
-local header = Instance.new("Frame")
-header.Size = UDim2.new(1, 0, 0, 40)
-header.BackgroundColor3 = C.surface
-header.Parent = main
-corner(header, 10)
-
-local title = Instance.new("TextLabel")
-title.Text = "  EURO HUB - EXECUTOR MODE"
-title.Size = UDim2.new(1, 0, 1, 0)
-title.TextColor3 = C.text
-title.Font = FONT_BOLD
-title.TextSize = 14
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.BackgroundTransparency = 1
-title.Parent = header
-
--- Conteúdo
-local container = Instance.new("Frame")
-container.Position = UDim2.new(0, 140, 0, 45)
-container.Size = UDim2.new(1, -150, 1, -55)
-container.BackgroundTransparency = 1
-container.Parent = main
-
-local layout = Instance.new("UIListLayout")
-layout.Padding = UDim.new(0, 8)
-layout.Parent = container
-
--- Sidebar Simples
-local sidebar = Instance.new("Frame")
-sidebar.Size = UDim2.new(0, 130, 1, -40)
-sidebar.Position = UDim2.new(0, 0, 0, 40)
-sidebar.BackgroundColor3 = C.bg
-sidebar.Parent = main
-
--- ==================== COMPONENTES ====================
-local function CreateToggle(name, desc)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, 0, 0, 40)
-    btn.BackgroundColor3 = C.surface
-    btn.Text = "  " .. name .. ": OFF"
-    btn.TextColor3 = C.muted
-    btn.Font = FONT_REG
-    btn.TextSize = 12
-    btn.TextXAlignment = Enum.TextXAlignment.Left
-    btn.Parent = container
-    corner(btn, 6)
-
-    toggles[name] = false
-
-    btn.MouseButton1Click:Connect(function()
-        toggles[name] = not toggles[name]
-        btn.Text = "  " .. name .. ": " .. (toggles[name] and "ON" or "OFF")
-        btn.TextColor3 = toggles[name] and C.primary or C.muted
-    end)
-end
-
--- Adicionando Funções
-CreateToggle("Auto Farm", "Inicia o farm por nível")
-CreateToggle("Auto Attack", "Ataque rápido nos arredores")
-CreateToggle("Katakuri Farm", "Foca no boss Katakuri")
-
--- ==================== LÓGICA DE EXECUÇÃO (LOOP) ====================
-local lastAttack = 0
-
-connections.mainLoop = RunService.Heartbeat:Connect(function()
-    if not character or not character:FindFirstChild("Humanoid") or character.Humanoid.Health <= 0 then return end
-
-    -- Lógica de Ataque
-    if toggles["Auto Attack"] then
-        if tick() - lastAttack >= attackSpeed then
-            fastAttack()
-            lastAttack = tick()
-        end
-    end
-
-    -- Lógica de Farm (Exemplo simplificado)
-    if toggles["Auto Farm"] then
-        local targetPos = questTable[1].mobArea
-        if humanoidRootPart then
-            humanoidRootPart.CFrame = targetPos
-        end
-    end
-
-    -- Lógica do Katakuri (A parte que estava cortada)
-    if toggles["Katakuri Farm"] then
-        local boss = Workspace:FindFirstChild("Katakuri") or Workspace:FindFirstChild("Cake Prince")
-        if boss and boss:FindFirstChild("HumanoidRootPart") then
-            humanoidRootPart.CFrame = boss.HumanoidRootPart.CFrame * CFrame.new(0, 10, 0)
-            fastAttack()
+task.spawn(function()
+    while wait(.1) do
+        if getgenv().AntiAFK then
+            local vu = game:GetService("VirtualUser")
+            game:GetService("Players").LocalPlayer.Idled:Connect(function()
+                vu:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+                wait(1)
+                vu:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+            end)
         end
     end
 end)
 
--- Botão de Fechar
-local close = Instance.new("TextButton")
-close.Text = "X"
-close.Size = UDim2.fromOffset(30, 30)
-close.Position = UDim2.new(1, -35, 0, 5)
-close.BackgroundColor3 = C.primary
-close.TextColor3 = Color3.new(1,1,1)
-close.Parent = header
-corner(close, 5)
-
-close.MouseButton1Click:Connect(function()
-    connections.mainLoop:Disconnect()
-    screen:Destroy()
+-- ANTI KICK
+getgenv().AntiKickClient = true
+Main_Home:addToggle("Anti Kick Client", getgenv().AntiKickClient, function(Value)
+    getgenv().AntiKickClient = Value
 end)
 
--- Arrastar UI (Simple Mobile/PC Friendly)
-local dragging, dragStart, startPos
-header.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = main.Position
+task.spawn(function()
+    while wait() do
+        if getgenv().AntiKickClient then
+            loadstring(game:HttpGet('https://gitlab.com/Sky2836/BT/-/raw/main/antikickclient'))()
+        end
     end
 end)
 
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+-- FPS BOOST
+Main_Home:addButton("Antilag - FPS", function()
+    local g = game
+    local w = g.Workspace
+    local l = g.Lighting
+    local t = w.Terrain
+
+    t.WaterWaveSize = 0
+    t.WaterWaveSpeed = 0
+    t.WaterReflectance = 0
+    t.WaterTransparency = 0
+    l.GlobalShadows = false
+    l.FogEnd = 9e9
+    l.Brightness = 0
+    settings().Rendering.QualityLevel = "Level01"
+
+    for i,v in pairs(g:GetDescendants()) do
+        if v:IsA("Part") or v:IsA("MeshPart") then
+            v.Material = "Plastic"
+            v.Reflectance = 0
+        elseif v:IsA("Decal") or v:IsA("Texture") then
+            v.Transparency = 1
+        end
     end
 end)
 
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = false
-    end
-end)
+-- AUTO LOAD SCRIPTS
+loadstring(game:HttpGet("https://raw.githubusercontent.com/AnhTuanDzai-Hub/FastAttackLoL/refs/heads/main/FastAttack.lua"))()
 
-print("[EURO HUB] Carregado com sucesso!")
+wait(1)
+
+loadstring(game:HttpGet('https://raw.githubusercontent.com/S4nZz/bt_project/main/script'))()
+
+-- WORLD CHECK
+First_Sea = false
+Second_Sea = false
+Third_Sea = false
+
+local placeId = game.PlaceId
+
+if placeId == 2753915549 then
+    First_Sea = true
+elseif placeId == 4442272183 then
+    Second_Sea = true
+elseif placeId == 7449423635 then
+    Third_Sea = true
+end
