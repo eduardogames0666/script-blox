@@ -1,1079 +1,402 @@
---[[
-    EURO HUB — Painel visual (Roblox Studio)
-    ----------------------------------------
-    Como usar:
-      1. Abra seu jogo no Roblox Studio.
-      2. No Explorer, vá em: StarterPlayer > StarterPlayerScripts
-      3. Insira um LocalScript e cole TODO este conteúdo dentro dele.
-      4. Play. O painel aparece para o LocalPlayer.
-
-    Observações:
-      - Apenas UI (visual). Os "slots de código" estão marcados com -- [SLOT].
-      - Estilo: dark + vermelho #FF0000.
-      - Tem: sidebar, header com Minimizar/Fechar, bolha flutuante arrastável,
-        abas com Toggle / Dropdown / Section / CodeSlot.
-]]
-
-local Players       = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local TweenService  = game:GetService("TweenService")
-
-local RunService     = game:GetService("RunService")
-local Workspace      = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local PathfindingService = game:GetService("PathfindingService")
-
--- Vars globais para logics
-local toggles = {}
-local connections = {}
-local combatTool = nil
-local attackSpeed = 0.1
-local character = nil
-local humanoidRootPart = nil
-local materialTarget = "Magma Ore" -- default
-
--- Tabela quests por nível (exemplo - ajustar coords reais)
-local questTable = {
-    [1] = {npcPos = CFrame.new(100, 20, 100), questId = "StarterQuest", mobArea = CFrame.new(120, 20, 120)},
-    [50] = {npcPos = CFrame.new(500, 50, 500), questId = "DesertQuest", mobArea = CFrame.new(520, 50, 520)},
-    -- Adicionar mais levels...
-    [2650] = {npcPos = CFrame.new(0,0,0), questId = "Final", mobArea = CFrame.new(0,0,0)}
-}
-
--- Funções utilitárias para logics
-local function updateCharacter()
-    character = player.Character or player.CharacterAdded:Wait()
-    humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-end
-player.CharacterAdded:Connect(updateCharacter)
-if player.Character then updateCharacter() end
-
-local function equipTool(toolName)
-    local tool = player.Backpack:FindFirstChild(toolName) or character:FindFirstChild(toolName)
-    if tool and tool:IsA("Tool") then
-        character.Humanoid:EquipTool(tool)
-        combatTool = tool
-    end
-end
-
-local function teleportTo(pos)
-    if humanoidRootPart then
-        humanoidRootPart.CFrame = pos + Vector3.new(0, 10, 0) -- altura segura
-    end
-end
-
-local function toggleNoclip(enabled)
-    if character then
-        for _, part in pairs(character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = not enabled
-            end
-        end
-    end
-end
-
-local function fastAttack()
-    if combatTool and character then
-        combatTool:Activate()
-        task.wait(attackSpeed)
-    end
-end
-
-local function getPlayerLevel()
-    local stats = player:FindFirstChild("leaderstats")
-    return stats and stats:FindFirstChild("Level") and stats.Level.Value or 1
-end
-
-local function fireRemote(remoteName, ...)
-    local remote = ReplicatedStorage:FindFirstChild(remoteName, true)
-    if remote and remote:IsA("RemoteEvent") then
-        remote:FireServer(...)
-    end
-end
-
-local player = Players.LocalPlayer
-local pgui   = player:WaitForChild("PlayerGui")
-
--- =========================================================
--- PALETA / TOKENS
--- =========================================================
-local C = {
-    bg          = Color3.fromRGB(10, 10, 12),
-    card        = Color3.fromRGB(18, 18, 22),
-    surface     = Color3.fromRGB(26, 26, 32),
-    border      = Color3.fromRGB(40, 40, 48),
-    text        = Color3.fromRGB(235, 235, 240),
-    muted       = Color3.fromRGB(140, 140, 150),
-    primary     = Color3.fromRGB(255, 0, 0),
-    primaryDim  = Color3.fromRGB(180, 0, 0),
-    success     = Color3.fromRGB(0, 200, 80),
-    warn        = Color3.fromRGB(230, 180, 0),
-}
-
-local FONT_UI   = Enum.Font.Gotham
-local FONT_BOLD = Enum.Font.GothamBold
-local FONT_MONO = Enum.Font.Code
-
--- =========================================================
--- HELPERS DE UI
--- =========================================================
-local function corner(parent, r)
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, r or 8)
-    c.Parent = parent
-    return c
-end
-
-local function stroke(parent, color, thick)
-    local s = Instance.new("UIStroke")
-    s.Color = color or C.border
-    s.Thickness = thick or 1
-    s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    s.Parent = parent
-    return s
-end
-
-local function pad(parent, p)
-    local u = Instance.new("UIPadding")
-    u.PaddingTop    = UDim.new(0, p)
-    u.PaddingBottom = UDim.new(0, p)
-    u.PaddingLeft   = UDim.new(0, p)
-    u.PaddingRight  = UDim.new(0, p)
-    u.Parent = parent
-    return u
-end
-
-local function vlist(parent, gap)
-    local l = Instance.new("UIListLayout")
-    l.FillDirection = Enum.FillDirection.Vertical
-    l.SortOrder = Enum.SortOrder.LayoutOrder
-    l.Padding = UDim.new(0, gap or 6)
-    l.Parent = parent
-    return l
-end
-
--- =========================================================
--- SCREEN GUI RAIZ
--- =========================================================
-local screen = Instance.new("ScreenGui")
-screen.Name = "EuroHub"
-screen.ResetOnSpawn = false
-screen.IgnoreGuiInset = true
-screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screen.Parent = pgui
-
--- =========================================================
--- BOLHA FLUTUANTE (quando minimizado)
--- =========================================================
-local bubble = Instance.new("TextButton")
-bubble.Name = "Bubble"
-bubble.Size = UDim2.fromOffset(56, 56)
-bubble.Position = UDim2.new(0, 24, 1, -88)
-bubble.BackgroundColor3 = C.primary
-bubble.AutoButtonColor = false
-bubble.Text = "E"
-bubble.Font = FONT_BOLD
-bubble.TextSize = 22
-bubble.TextColor3 = Color3.new(1, 1, 1)
-bubble.Visible = false
-bubble.Parent = screen
-corner(bubble, 28)
-stroke(bubble, Color3.fromRGB(255, 80, 80), 2)
-
--- arrastar a bolha
-do
-    local dragging, moved, startPos, startInput
-    bubble.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            moved = false
-            startPos = bubble.Position
-            startInput = input.Position
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - startInput
-            if delta.Magnitude > 4 then moved = true end
-            bubble.Position = UDim2.new(
-                startPos.X.Scale, startPos.X.Offset + delta.X,
-                startPos.Y.Scale, startPos.Y.Offset + delta.Y
-            )
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-            if dragging and not moved then
-                -- clique simples = restaurar
-                bubble.Visible = false
-                screen:FindFirstChild("Main").Visible = true
-            end
-            dragging = false
-        end
-    end)
-end
-
--- =========================================================
--- JANELA PRINCIPAL
--- =========================================================
-local main = Instance.new("Frame")
-main.Name = "Main"
-main.AnchorPoint = Vector2.new(0.5, 0.5)
-main.Position = UDim2.fromScale(0.5, 0.5)
-main.Size = UDim2.fromOffset(900, 560)
-main.BackgroundColor3 = C.card
-main.BorderSizePixel = 0
-main.Parent = screen
-corner(main, 14)
-stroke(main, C.border, 1)
-
--- arrastar a janela pela header
-local function makeDraggable(handle, target)
-    local dragging, startPos, startInput
-    handle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            startPos = target.Position
-            startInput = input.Position
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch) then
-            local d = input.Position - startInput
-            target.Position = UDim2.new(
-                startPos.X.Scale, startPos.X.Offset + d.X,
-                startPos.Y.Scale, startPos.Y.Offset + d.Y
-            )
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-end
-
--- ---------- HEADER ----------
-local header = Instance.new("Frame")
-header.Name = "Header"
-header.Size = UDim2.new(1, 0, 0, 44)
-header.BackgroundColor3 = C.surface
-header.BorderSizePixel = 0
-header.Parent = main
-corner(header, 14)
-
-local headerFix = Instance.new("Frame") -- esconde o canto inferior arredondado
-headerFix.Size = UDim2.new(1, 0, 0, 14)
-headerFix.Position = UDim2.new(0, 0, 1, -14)
-headerFix.BackgroundColor3 = C.surface
-headerFix.BorderSizePixel = 0
-headerFix.Parent = header
-
-local title = Instance.new("TextLabel")
-title.BackgroundTransparency = 1
-title.Position = UDim2.new(0, 16, 0, 0)
-title.Size = UDim2.new(1, -160, 1, 0)
-title.Font = FONT_BOLD
-title.TextSize = 16
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.TextColor3 = C.text
-title.Text = "EURO HUB"
-title.Parent = header
-
-local dot = Instance.new("Frame")
-dot.Size = UDim2.fromOffset(8, 8)
-dot.Position = UDim2.new(0, 92, 0.5, -4)
-dot.BackgroundColor3 = C.primary
-dot.BorderSizePixel = 0
-dot.Parent = header
-corner(dot, 4)
-
-local function headerBtn(text, x, color)
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.fromOffset(28, 24)
-    b.Position = UDim2.new(1, x, 0.5, -12)
-    b.BackgroundColor3 = color
-    b.Text = text
-    b.TextColor3 = Color3.new(1, 1, 1)
-    b.Font = FONT_BOLD
-    b.TextSize = 14
-    b.AutoButtonColor = true
-    b.Parent = header
-    corner(b, 6)
-    return b
-end
-
-local btnMin   = headerBtn("–", -76, Color3.fromRGB(60, 60, 70))
-local btnClose = headerBtn("✕", -40, C.primaryDim)
-
-makeDraggable(header, main)
-
-btnMin.MouseButton1Click:Connect(function()
-    main.Visible = false
-    bubble.Visible = true
+-- ====== PAGE 1/197 ======
+local Library =
+loadstring(game:HttpGet("https://raw.githubusercontent.com/AnhTuanDzai-Hub/UIMenu/
+refs/heads/main/thanhipia.lua"))() -- LIBRARY
+local Window = Library:CreateWindow('Tuấn Anh IOS')
+local Tab = {
+   Tab_1 = Window:addTab('#Home'),
+   Tab_Setting = Window:addTab('#Settings'),
+   Tab_2 = Window:addTab('#Main Farm'),
+   Tab_SubFarm = Window:addTab('#Subs Farm'),
+   Tab_3 = Window:addTab('#Quest'),
+   Tab_Sea = Window:addTab('#Sea Event'),
+   Tab_RaceV4 = Window:addTab('#Race V4'),
+   Tab_4 = Window:addTab('#Raids'),
+   Tab_Combat = Window:addTab('#PVP'),
+   Tab_5 = Window:addTab('#Teleport & Status'),
+   Tab_6 = Window:addTab('#Shop'),
+   Tab_7 = Window:addTab('#Misc')
+}}
+local Home_Right = Tab.Tab_1:addSection() -- HOME RIGHT SECTION
+local Main_Home = Home_Right:addMenu("#Home")
+getgenv().WalkSpeedValue = 26
+Main_Home:addTextbox("Speed Hack", getgenv().WalkSpeedValue, function(speedfunc)
+   getgenv().WalkSpeedValue = speedfunc
+   if getgenv().WalkSpeedValue then
+   local Player = game:service'Players'.LocalPlayer
+Player.Character.Humanoid:GetPropertyChangedSignal'WalkSpeed':Connect(function()
+   Player.Character.Humanoid.WalkSpeed = getgenv().WalkSpeedValue
+      end)
+   Player.Character.Humanoid.WalkSpeed = getgenv().WalkSpeedValue
 end)
-
-btnClose.MouseButton1Click:Connect(function()
-    main.Visible = false
-    bubble.Visible = true -- mantém acesso (assim você não perde o painel)
+getgenv().JumpValue = 50
+Main_Home:addTextbox("Jump Hack", getgenv().JumpValue, function(jumpfunc)
+   getgenv().JumpValue = jumpfunc
+   if getgenv().JumpValue then
+   game:GetService("Players").LocalPlayer.Character.Humanoid.JumpPower =
 end)
-
--- ---------- BODY (sidebar + conteúdo) ----------
-local body = Instance.new("Frame")
-body.Name = "Body"
-body.Position = UDim2.new(0, 0, 0, 44)
-body.Size = UDim2.new(1, 0, 1, -44)
-body.BackgroundTransparency = 1
-body.Parent = main
-
-local sidebar = Instance.new("Frame")
-sidebar.Name = "Sidebar"
-sidebar.Size = UDim2.new(0, 200, 1, 0)
-sidebar.BackgroundColor3 = C.surface
-sidebar.BorderSizePixel = 0
-sidebar.Parent = body
-
-local sidebarStroke = Instance.new("Frame")
-sidebarStroke.Size = UDim2.new(0, 1, 1, 0)
-sidebarStroke.Position = UDim2.new(1, 0, 0, 0)
-sidebarStroke.BackgroundColor3 = C.border
-sidebarStroke.BorderSizePixel = 0
-sidebarStroke.Parent = sidebar
-
-local sideScroll = Instance.new("ScrollingFrame")
-sideScroll.BackgroundTransparency = 1
-sideScroll.BorderSizePixel = 0
-sideScroll.Size = UDim2.new(1, 0, 1, 0)
-sideScroll.CanvasSize = UDim2.new()
-sideScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-sideScroll.ScrollBarThickness = 4
-sideScroll.ScrollBarImageColor3 = C.primary
-sideScroll.Parent = sidebar
-pad(sideScroll, 10)
-vlist(sideScroll, 4)
-
-local content = Instance.new("Frame")
-content.Name = "Content"
-content.Position = UDim2.new(0, 200, 0, 0)
-content.Size = UDim2.new(1, -200, 1, 0)
-content.BackgroundColor3 = C.bg
-content.BorderSizePixel = 0
-content.Parent = body
-
-local contentTitle = Instance.new("TextLabel")
-contentTitle.BackgroundTransparency = 1
-contentTitle.Position = UDim2.new(0, 18, 0, 12)
-contentTitle.Size = UDim2.new(1, -36, 0, 22)
-contentTitle.Font = FONT_BOLD
-contentTitle.TextSize = 16
-contentTitle.TextXAlignment = Enum.TextXAlignment.Left
-contentTitle.TextColor3 = C.text
-contentTitle.Text = "INFO / ESTADO"
-contentTitle.Parent = content
-
-local contentTag = Instance.new("TextLabel")
-contentTag.BackgroundTransparency = 1
-contentTag.Position = UDim2.new(1, -180, 0, 14)
-contentTag.Size = UDim2.new(0, 170, 0, 18)
-contentTag.Font = FONT_MONO
-contentTag.TextSize = 11
-contentTag.TextXAlignment = Enum.TextXAlignment.Right
-contentTag.TextColor3 = C.muted
-contentTag.Text = "EURO HUB / info"
-contentTag.Parent = content
-
-local divider = Instance.new("Frame")
-divider.Position = UDim2.new(0, 18, 0, 42)
-divider.Size = UDim2.new(1, -36, 0, 1)
-divider.BackgroundColor3 = C.border
-divider.BorderSizePixel = 0
-divider.Parent = content
-
-local pages = Instance.new("Frame")
-pages.Position = UDim2.new(0, 0, 0, 52)
-pages.Size = UDim2.new(1, 0, 1, -52)
-pages.BackgroundTransparency = 1
-pages.Parent = content
-
--- =========================================================
--- COMPONENTES REUTILIZÁVEIS
--- =========================================================
-
--- Section (card que agrupa controles)
-local function Section(parent, titleText, hint)
-    local card = Instance.new("Frame")
-    card.BackgroundColor3 = C.surface
-    card.BorderSizePixel = 0
-    card.AutomaticSize = Enum.AutomaticSize.Y
-    card.Size = UDim2.new(1, 0, 0, 0)
-    card.Parent = parent
-    corner(card, 10)
-    stroke(card, C.border, 1)
-    pad(card, 12)
-
-    local layout = vlist(card, 8)
-    layout.Parent = card
-
-    local head = Instance.new("Frame")
-    head.BackgroundTransparency = 1
-    head.Size = UDim2.new(1, 0, 0, 18)
-    head.LayoutOrder = -1
-    head.Parent = card
-
-    local t = Instance.new("TextLabel")
-    t.BackgroundTransparency = 1
-    t.Size = UDim2.new(1, hint and -120 or 0, 1, 0)
-    t.Font = FONT_BOLD
-    t.TextSize = 13
-    t.TextXAlignment = Enum.TextXAlignment.Left
-    t.TextColor3 = C.text
-    t.Text = titleText
-    t.Parent = head
-
-    if hint then
-        local h = Instance.new("TextLabel")
-        h.BackgroundTransparency = 1
-        h.AnchorPoint = Vector2.new(1, 0)
-        h.Position = UDim2.new(1, 0, 0, 0)
-        h.Size = UDim2.new(0, 120, 1, 0)
-        h.Font = FONT_MONO
-        h.TextSize = 10
-        h.TextXAlignment = Enum.TextXAlignment.Right
-        h.TextColor3 = C.muted
-        h.Text = hint
-        h.Parent = head
-    end
-
-    return card
-end
-
--- Toggle
-local function Toggle(parent, label, desc, defaultOn)
-    local row = Instance.new("Frame")
-    row.BackgroundColor3 = C.bg
-    row.BorderSizePixel = 0
-    row.Size = UDim2.new(1, 0, 0, 44)
-    row.Parent = parent
-    corner(row, 8)
-    stroke(row, C.border, 1)
-    pad(row, 8)
-
-    local lbl = Instance.new("TextLabel")
-    lbl.BackgroundTransparency = 1
-    lbl.Position = UDim2.new(0, 4, 0, 0)
-    lbl.Size = UDim2.new(1, -68, 0, 16)
-    lbl.Font = FONT_BOLD
-    lbl.TextSize = 12
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.TextColor3 = C.text
-    lbl.Text = label
-    lbl.Parent = row
-
-    if desc then
-        local d = Instance.new("TextLabel")
-        d.BackgroundTransparency = 1
-        d.Position = UDim2.new(0, 4, 0, 16)
-        d.Size = UDim2.new(1, -68, 0, 14)
-        d.Font = FONT_UI
-        d.TextSize = 11
-        d.TextXAlignment = Enum.TextXAlignment.Left
-        d.TextColor3 = C.muted
-        d.Text = desc
-        d.Parent = row
-    end
-
-    local sw = Instance.new("TextButton")
-    sw.AutoButtonColor = false
-    sw.AnchorPoint = Vector2.new(1, 0.5)
-    sw.Position = UDim2.new(1, -4, 0.5, 0)
-    sw.Size = UDim2.fromOffset(44, 22)
-    sw.Text = ""
-    sw.BackgroundColor3 = defaultOn and C.primary or Color3.fromRGB(60, 60, 70)
-    sw.Parent = row
-    corner(sw, 11)
-
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.fromOffset(18, 18)
-    knob.Position = defaultOn and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
-    knob.BackgroundColor3 = Color3.new(1, 1, 1)
-    knob.BorderSizePixel = 0
-    knob.Parent = sw
-    corner(knob, 9)
-
-    local on = defaultOn and true or false
-    sw.MouseButton1Click:Connect(function()
-        on = not on
-        TweenService:Create(sw, TweenInfo.new(0.15), {
-            BackgroundColor3 = on and C.primary or Color3.fromRGB(60, 60, 70)
-        }):Play()
-        TweenService:Create(knob, TweenInfo.new(0.15), {
-            Position = on and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
-        }):Play()
-        toggles[label] = on
-        print("[EuroHub] Toggle '" .. label .. "' = " .. tostring(on))
-    end)
-
-    return row
-end
-
--- Dropdown (simples: clica e cicla a opção)
-local function Dropdown(parent, label, options, default)
-    local row = Instance.new("Frame")
-    row.BackgroundColor3 = C.bg
-    row.BorderSizePixel = 0
-    row.Size = UDim2.new(1, 0, 0, 44)
-    row.Parent = parent
-    corner(row, 8)
-    stroke(row, C.border, 1)
-    pad(row, 8)
-
-    local lbl = Instance.new("TextLabel")
-    lbl.BackgroundTransparency = 1
-    lbl.Position = UDim2.new(0, 4, 0, 0)
-    lbl.Size = UDim2.new(0.55, -8, 1, 0)
-    lbl.Font = FONT_BOLD
-    lbl.TextSize = 12
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.TextColor3 = C.text
-    lbl.Text = label
-    lbl.Parent = row
-
-    local btn = Instance.new("TextButton")
-    btn.AnchorPoint = Vector2.new(1, 0.5)
-    btn.Position = UDim2.new(1, -4, 0.5, 0)
-    btn.Size = UDim2.new(0.45, -8, 0, 28)
-    btn.BackgroundColor3 = C.surface
-    btn.Font = FONT_MONO
-    btn.TextSize = 12
-    btn.TextColor3 = C.text
-    btn.AutoButtonColor = true
-    btn.Parent = row
-    corner(btn, 6)
-    stroke(btn, C.border, 1)
-
-    local idx = 1
-    if default then
-        for i, v in ipairs(options) do if v == default then idx = i break end end
-    end
-    btn.Text = (options[idx] or "—") .. "  ▾"
-
-    btn.MouseButton1Click:Connect(function()
-        idx = (idx % #options) + 1
-        btn.Text = options[idx] .. "  ▾"
-        if label == "Arma Selecionada" then
-            combatTool = options[idx]
-            if toggles["Auto Equipar"] then
-                equipTool(combatTool)
-            end
-        elseif label == "Velocidade de Ataque" then
-            local speeds = {Lenta = 0.5, ["Normal"] = 0.3, Rápida = 0.1, Turbo = 0.05}
-            attackSpeed = speeds[options[idx]] or 0.1
-        end
-        print("[EuroHub] Dropdown '" .. label .. "' = " .. options[idx])
-    end)
-
-    return row
-end
-
--- ActionButton
-local function ActionButton(parent, text)
-    local b = Instance.new("TextButton")
-    b.BackgroundColor3 = C.primary
-    b.Size = UDim2.new(1, 0, 0, 32)
-    b.Font = FONT_BOLD
-    b.TextSize = 12
-    b.TextColor3 = Color3.new(1, 1, 1)
-    b.Text = text
-    b.AutoButtonColor = true
-    b.Parent = parent
-    corner(b, 6)
-    return b
-end
-
--- CodeSlot (placeholder de "aqui entra a lógica")
-local function CodeSlot(parent, name, description)
-    local box = Instance.new("Frame")
-    box.BackgroundColor3 = C.bg
-    box.BorderSizePixel = 0
-    box.AutomaticSize = Enum.AutomaticSize.Y
-    box.Size = UDim2.new(1, 0, 0, 0)
-    box.Parent = parent
-    corner(box, 6)
-    local s = stroke(box, C.primary, 1)
-    s.Transparency = 0.5
-    pad(box, 8)
-
-    local v = vlist(box, 4)
-    v.Parent = box
-
-    local n = Instance.new("TextLabel")
-    n.BackgroundTransparency = 1
-    n.Size = UDim2.new(1, 0, 0, 14)
-    n.Font = FONT_MONO
-    n.TextSize = 11
-    n.TextXAlignment = Enum.TextXAlignment.Left
-    n.TextColor3 = C.primary
-    n.Text = "[SLOT] " .. name
-    n.Parent = box
-
-    local d = Instance.new("TextLabel")
-    d.BackgroundTransparency = 1
-    d.AutomaticSize = Enum.AutomaticSize.Y
-    d.Size = UDim2.new(1, 0, 0, 0)
-    d.Font = FONT_UI
-    d.TextSize = 11
-    d.TextXAlignment = Enum.TextXAlignment.Left
-    d.TextYAlignment = Enum.TextYAlignment.Top
-    d.TextWrapped = true
-    d.TextColor3 = C.muted
-    d.Text = description
-    d.Parent = box
-
-    local code = Instance.new("TextLabel")
-    code.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
-    code.BorderSizePixel = 0
-    code.AutomaticSize = Enum.AutomaticSize.Y
-    code.Size = UDim2.new(1, 0, 0, 0)
-    code.Font = FONT_MONO
-    code.TextSize = 11
-    code.TextXAlignment = Enum.TextXAlignment.Left
-    code.TextYAlignment = Enum.TextYAlignment.Top
-    code.TextColor3 = C.muted
-    code.TextWrapped = true
-    code.Text = ("-- %s\n-- %s\n-- (cole aqui a lógica)"):format(name, description)
-    code.Parent = box
-    corner(code, 4)
-    pad(code, 6)
-
-    return box
-end
-
--- =========================================================
--- ABAS (cada uma é uma página/ScrollingFrame)
--- =========================================================
-local TABS = {
-    { id = "info",     label = "INFO / ESTADO" },
-    { id = "farming",  label = "Farming" },
-    { id = "fishing",  label = "Pesca Auto" },
-    { id = "quest",    label = "Missões | Itens" },
-    { id = "volcano",  label = "Dojo do Vulcão" },
-    { id = "sea",      label = "Evento do Mar" },
-    { id = "race",     label = "Corrida V4" },
-    { id = "raid",     label = "Raid de Frutas" },
-    { id = "stock",    label = "Frutas | Estoque" },
-    { id = "teleport", label = "Teleporte" },
-}
-
-local pageFrames = {}
-
-local function makePage(id)
-    local page = Instance.new("ScrollingFrame")
-    page.Name = "Page_" .. id
-    page.Size = UDim2.new(1, 0, 1, 0)
-    page.BackgroundTransparency = 1
-    page.BorderSizePixel = 0
-    page.Visible = false
-    page.ScrollBarThickness = 4
-    page.ScrollBarImageColor3 = C.primary
-    page.CanvasSize = UDim2.new()
-    page.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    page.Parent = pages
-    pad(page, 16)
-    local l = vlist(page, 10)
-    l.Parent = page
-    pageFrames[id] = page
-    return page
-end
-
--- ----- INFO -----
-do
-    local p = makePage("info")
-    local s = Section(p, "Status do Personagem", "atualiza em tempo real")
-    Toggle(s, "Mostrar HUD", "Exibe overlay com status", true)
-    Toggle(s, "Modo Compacto", "Reduz tamanho do painel", false)
-    CodeSlot(s, "playerStatsLoop",
-        "Lê HP/level/posição do LocalPlayer e atualiza labels da seção.")
-
-    local s2 = Section(p, "Servidor", "info do place")
-    Dropdown(s2, "Região Preferida", {"Auto", "BR", "US-East", "EU"}, "Auto")
-    ActionButton(s2, "Atualizar Info")
-    CodeSlot(s2, "serverInfo",
-        "Lê JobId, ping e quantidade de jogadores do servidor atual.")
-end
-
--- ----- FARMING -----
-do
-    local p = makePage("farming")
-    local s = Section(p, "Configurações de Combate")
-    Dropdown(s, "Arma Selecionada", {"Corpo a Corpo", "Espada", "Arma de Fogo", "Fruta"})
-    Dropdown(s, "Velocidade de Ataque", {"Lenta", "Normal", "Rápida", "Turbo"}, "Rápida")
-    Toggle(s, "Auto Equipar", "Equipa a arma escolhida automaticamente", true)
-    CodeSlot(s, "onWeaponChange",
-        "Disparado quando o usuário troca de arma. Aplicar arma equipada no personagem.")
-
-    local s2 = Section(p, "Farm Principal", "Progressão de Nível")
-    Toggle(s2, "Auto Farm por Nível (1 – 2650)", "Identifica nível e missão atual", true)
-    Toggle(s2, "Auto Farm Nova Ilha", "Foca em novas áreas desbloqueadas", false)
-    Toggle(s2, "Auto Atacar Próximos · Aura de Mob", "Ataca inimigos no raio definido", false)
-    Dropdown(s2, "Raio da Aura", {"20", "40", "60", "80", "100"}, "60")
-    CodeSlot(s2, "autoFarmByLevel",
-        "Lê o nível e move o personagem para a área de farm correspondente.")
-    CodeSlot(s2, "auraAttackLoop",
-        "A cada tick, busca mobs dentro do raio e dispara ataques.")
-
-    local s3 = Section(p, "Eventos & Chefes")
-    Toggle(s3, "Evento Boss Pain", nil, false)
-    Dropdown(s3, "Selecionar Boss", {"Diamond", "Mihawk", "Magma Admiral", "Smoke Admiral"})
-    Toggle(s3, "Tirano dos Céus · Checar Olhos", nil, false)
-    Toggle(s3, "Katakuri · Príncipe do Bolo", nil, false)
-    ActionButton(s3, "Farm V1")
-    ActionButton(s3, "Farm V2")
-    CodeSlot(s3, "bossSelector",
-        "Resolve o boss escolhido para coordenadas/ID e prepara a rotina.")
-end
-
--- ----- FISHING -----
-do
-    local p = makePage("fishing")
-    local s = Section(p, "Pesca Automática")
-    Toggle(s, "Auto Pescar", "Lança e recolhe sozinho", true)
-    Dropdown(s, "Local Preferido", {"Praia", "Rio", "Mar Aberto", "Lago Profundo"})
-    Dropdown(s, "Isca", {"Comum", "Premium", "Lendária"}, "Premium")
-    Toggle(s, "Soltar Peixes Comuns", nil, true)
-    CodeSlot(s, "fishingLoop",
-        "Equipa vara, lança, espera mordida e recolhe. Filtra por raridade.")
-end
-
--- ----- QUEST -----
-do
-    local p = makePage("quest")
-    local s = Section(p, "Missões")
-    Toggle(s, "Auto Aceitar Missões", nil, true)
-    Toggle(s, "Auto Entregar Recompensas", nil, true)
-    Dropdown(s, "Prioridade", {"Diárias", "Principais", "Eventos"})
-    CodeSlot(s, "questHandler",
-        "Detecta NPC de missão próximo, aceita e marca objetivos.")
-
-    local s2 = Section(p, "Itens")
-    Toggle(s2, "Auto Coletar Itens do Chão", nil, true)
-    Dropdown(s2, "Filtro", {"Tudo", "Só Raros", "Só Lendários"}, "Tudo")
-end
-
--- ----- VOLCANO -----
-do
-    local p = makePage("volcano")
-    local s = Section(p, "Dojo do Vulcão")
-    Dropdown(s, "Dificuldade", {"Fácil", "Normal", "Difícil", "Insano"}, "Normal")
-    Toggle(s, "Auto Treinar", nil, false)
-    Dropdown(s, "Recompensa Alvo", {"Habilidade A", "Habilidade B", "Habilidade C"})
-    CodeSlot(s, "volcanoTrainer",
-        "Repete o treino até obter a habilidade alvo.")
-end
-
--- ----- SEA -----
-do
-    local p = makePage("sea")
-    local s = Section(p, "Evento do Mar")
-    Toggle(s, "Auto Navegar", nil, true)
-    Dropdown(s, "Modo do Navio", {"Patrulha", "Combate", "Exploração"}, "Combate")
-    Toggle(s, "Atacar Navios Inimigos", nil, true)
-    CodeSlot(s, "shipController",
-        "Pilota o navio até o objetivo e engaja inimigos.")
-end
-
--- ----- RACE -----
-do
-    local p = makePage("race")
-    local s = Section(p, "Corrida V4")
-    Dropdown(s, "Raça Alvo", {"Humano", "Skypian", "Fishman", "Mink"})
-    Toggle(s, "Pular Obstáculos", nil, true)
-    Toggle(s, "Otimizar Rota", nil, true)
-    CodeSlot(s, "raceRunner",
-        "Calcula rota mínima, detecta obstáculos e executa pulos.")
-end
-
--- ----- RAID -----
-do
-    local p = makePage("raid")
-    local s = Section(p, "Raid de Frutas")
-    Dropdown(s, "Fruta para Raid", {"Magma", "Light", "Dragon", "Buddha"})
-    Toggle(s, "Auto Entrar na Raid", nil, true)
-    Dropdown(s, "Estratégia", {"DPS", "Tank", "Suporte"}, "DPS")
-    CodeSlot(s, "raidLoop",
-        "Entra na raid, posiciona e segue a rotação de habilidades escolhida.")
-end
-
--- ----- STOCK -----
-do
-    local p = makePage("stock")
-    local s = Section(p, "Monitor de Estoque")
-    Toggle(s, "Auto Verificar Estoque", "Atualiza a cada minuto", true)
-    Toggle(s, "Notificar Frutas Raras", nil, true)
-    Dropdown(s, "Fruta Alvo", {"Dragon", "Phoenix", "Buddha", "Light", "Dark"}, "Dragon")
-    CodeSlot(s, "stockChecker",
-        "Consulta o estoque da loja a cada intervalo e atualiza a lista.")
-
-    local s2 = Section(p, "Estoque Atual", "última verificação: agora")
-    local list = {
-        {"Magma", "850.000", true},
-        {"Light", "1.200.000", true},
-        {"Dragon", "—", false},
-        {"Buddha", "1.500.000", true},
-    }
-    for _, item in ipairs(list) do
-        local row = Instance.new("Frame")
-        row.BackgroundColor3 = C.bg
-        row.BorderSizePixel = 0
-        row.Size = UDim2.new(1, 0, 0, 26)
-        row.Parent = s2
-        corner(row, 6)
-        stroke(row, C.border, 1)
-        pad(row, 6)
-
-        local n = Instance.new("TextLabel")
-        n.BackgroundTransparency = 1
-        n.Size = UDim2.new(0.4, 0, 1, 0)
-        n.Font = FONT_MONO
-        n.TextSize = 11
-        n.TextXAlignment = Enum.TextXAlignment.Left
-        n.TextColor3 = C.text
-        n.Text = item[1]
-        n.Parent = row
-
-        local pr = Instance.new("TextLabel")
-        pr.BackgroundTransparency = 1
-        pr.Position = UDim2.new(0.4, 0, 0, 0)
-        pr.Size = UDim2.new(0.35, 0, 1, 0)
-        pr.Font = FONT_MONO
-        pr.TextSize = 11
-        pr.TextXAlignment = Enum.TextXAlignment.Left
-        pr.TextColor3 = C.muted
-        pr.Text = item[2]
-        pr.Parent = row
-
-        local st = Instance.new("TextLabel")
-        st.BackgroundTransparency = 1
-        st.AnchorPoint = Vector2.new(1, 0)
-        st.Position = UDim2.new(1, 0, 0, 0)
-        st.Size = UDim2.new(0.25, 0, 1, 0)
-        st.Font = FONT_MONO
-        st.TextSize = 11
-        st.TextXAlignment = Enum.TextXAlignment.Right
-        st.TextColor3 = item[3] and C.primary or C.muted
-        st.Text = item[3] and "Disponível" or "Esgotado"
-        st.Parent = row
-    end
-    ActionButton(s2, "Atualizar Agora")
-end
-
--- ----- TELEPORT -----
-do
-    local p = makePage("teleport")
-    local s = Section(p, "Teleporte Rápido")
-    Dropdown(s, "Ilha de Destino", {
-        "Ilha Inicial", "Ilha do Espadachim", "Ilha do Deserto",
-        "Ilha do Gelo", "Ilha do Céu", "Mary Geoise"
-    })
-    ActionButton(s, "Teletransportar")
-    CodeSlot(s, "teleportTo",
-        "Move o HumanoidRootPart para o CFrame da ilha escolhida.")
-
-    local s2 = Section(p, "Locais Salvos")
-    Toggle(s2, "Salvar Posição Atual ao Sair", nil, true)
-    ActionButton(s2, "Salvar Local Atual")
-    ActionButton(s2, "Voltar para Último Local")
-end
-
--- =========================================================
--- BOTÕES DA SIDEBAR + TROCA DE PÁGINA
--- =========================================================
-local activeBtn
-
-local function selectTab(tab, btn)
-    contentTitle.Text = tab.label
-    contentTag.Text = "EURO HUB / " .. tab.id
-    for id, frame in pairs(pageFrames) do
-        frame.Visible = (id == tab.id)
-    end
-    if activeBtn then
-        activeBtn.BackgroundColor3 = C.bg
-        activeBtn.TextColor3 = C.text
-    end
-    btn.BackgroundColor3 = C.primary
-    btn.TextColor3 = Color3.new(1, 1, 1)
-    activeBtn = btn
-end
-
-for i, tab in ipairs(TABS) do
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1, 0, 0, 32)
-    b.BackgroundColor3 = C.bg
-    b.AutoButtonColor = false
-    b.Font = FONT_BOLD
-    b.TextSize = 12
-    b.TextColor3 = C.text
-    b.TextXAlignment = Enum.TextXAlignment.Left
-    b.Text = "  " .. tab.label
-    b.LayoutOrder = i
-    b.Parent = sideScroll
-    corner(b, 6)
-    stroke(b, C.border, 1)
-
-    b.MouseEnter:Connect(function()
-        if activeBtn ~= b then
-            b.BackgroundColor3 = C.surface
-        end
-    end)
-    b.MouseLeave:Connect(function()
-        if activeBtn ~= b then
-            b.BackgroundColor3 = C.bg
-        end
-    end)
-    b.MouseButton1Click:Connect(function()
-        selectTab(tab, b)
-    end)
-
-    if i == 1 then
-        selectTab(tab, b)
-    end
-end
-
-print("[EURO HUB] painel carregado.")
-
--- Main game loop central
-connections.mainLoop = RunService.Heartbeat:Connect(function()
-    if not character or character.Humanoid.Health <= 0 then return end
-    
-    -- Combat setup check
-    if toggles["Auto Equipar"] and combatTool then
-        equipTool(combatTool)
-    end
-    
-    -- Main Farm
-    if toggles["Auto Farm por Nível (1 – 2650)"] then
-        local level = getPlayerLevel()
-        local quest = questTable[level] or questTable[1]
-        if quest then
-            teleportTo(quest.npcPos)
-            fireRemote(quest.questId)
-            task.wait(1)
-            teleportTo(quest.mobArea)
-            -- attack mobs (will loop in fastAttack if active)
-        end
-    end
-    
-    -- Aura attack example
-    if toggles["Auto Atacar Próximos · Aura de Mob"] then
-        -- find nearest mob in Workspace.NPCs
-        local raio = tonumber((toggles["Raio da Aura"] or "60"):match("%d+")) or 60
-        -- logic to find and attack closest
-        fastAttack()
-    end
-    
--- Boss Farm & Events
-    local npcsFolder = Workspace:FindFirstChild("NPCs") or Workspace
-    if npcsFolder:FindFirstChild("Katakuri") and toggles["Katakuri · Príncipe do Bolo"] then
-        local katakuri = npcsFolder.Katakuri
-        local deaths = katakuri:FindFirstChild("Deaths") -- assume value
-        if deaths and deaths.Value >= 500 then
-            teleportTo(katakuri.HumanoidRootPart.CFrame)
-            fastAttack()
-        end
-    end
-    if npcsFolder:FindFirstChild("Tyrant") and toggles["Tirano dos Céus · Checar Olhos"] then
-        -- Break vasos first
-        local vasos = Workspace:FindFirstChild("Vasos")
-        if vasos then
-            for _, vaso in vasos:GetChildren() do
-                fireRemote("BreakVase", vaso)
-            end
-        end
-        fastAttack()
-    end
-    
-    -- Auto Quest
-    if toggles["Auto Aceitar Missões"] then
-        local npcsFolder = Workspace:FindFirstChild("NPCs") or Workspace
-        local nearestQuest = nil
-        local minDist = math.huge
-        for _, npc in npcsFolder:GetChildren() do
-            if npc.Name:match("Quest") and npc:FindFirstChild("HumanoidRootPart") then
-                local dist = (humanoidRootPart.Position - npc.HumanoidRootPart.Position).Magnitude
-                if dist < minDist then
-                    minDist = dist
-                    nearestQuest = npc
-                end
-            end
-        end
-        if nearestQuest and minDist < 100 then
-            teleportTo(nearestQuest.HumanoidRootPart.CFrame)
-            fireRemote("AcceptQuest")
-        end
-    end
-    
--- Material Farm
-    local dropTable = {
-        ["Magma Ore"] = "MagmaMonster",
-        ["Bone"] = "Skeleton",
-        -- add more
-    }
-    if materialTarget and dropTable[materialTarget] then
-        local targetMobName = dropTable[materialTarget]
-        local npcsFolder = Workspace:FindFirstChild("NPCs") or Workspace
-        local targetMob = nil
-        local minDist = math.huge
-        for _, npc in npcsFolder:GetChildren() do
-            if npc.Name == targetMobName and npc:FindFirstChild("HumanoidRootPart") then
-                local dist = (humanoidRootPart.Position - npc.HumanoidRootPart.Position).Magnitude
-                if dist < minDist then
-                    minDist = dist
-                    targetMob = npc
-                end
-            end
-        end
-        if targetMob then
-            teleportTo(targetMob.HumanoidRootPart.CFrame)
-            fastAttack()
-        end
-    end
-    
-    -- Coleta Chests & Bones
-    if toggles["Auto Farm Chest"] then
-        toggleNoclip(true)
-        local chestsFolder = Workspace:FindFirstChild("Chests")
-        if chestsFolder then
-            -- simple tp to nearest chest
-            local nearestChest = nil
-            local minDistC = math.huge
-            for _, chest in chestsFolder:GetChildren() do
-                if chest:FindFirstChild("HumanoidRootPart") then
-                    local dist = (humanoidRootPart.Position - chest.HumanoidRootPart.Position).Magnitude
-                    if dist < minDistC then
-                        minDistC = dist
-                        nearestChest = chest
-                    end
-                end
-            end
-            if nearestChest then
-                teleportTo(nearestChest.HumanoidRootPart.CFrame)
-                fireRemote("OpenChest", nearestChest)
-            end
-        end
-    else
-        toggleNoclip(false)
-    end
-    
-    if toggles["Trade Bones"] then
-        local bonesNPC = Workspace.NPCs:FindFirstChild("BonesTrader") -- assume
-        if bonesNPC then
-            teleportTo(bonesNPC.HumanoidRootPart.CFrame)
-            fireRemote("TradeBones")
-        end
-    end
+getgenv().AntiAFK = true
+Main_Home:addToggle("Anti AFK", getgenv().AntiAFK, function(Value)
+   getgenv().AntiAFK = Value
 end)
+task.spawn(function ()
+   while wait(.1) do
+   if getgenv().AntiAFK then
+   local vu = game:GetService("VirtualUser")
+   game:GetService("Players").LocalPlayer.Idled:connect(function()
+   vu:Button2Down(Vector2.new(0,0),workspace.CurrentCamera.CFrame)
+   wait(1)
+
+-- ====== PAGE 2/197 ======
+   vu:Button2Up(Vector2.new(0,0),workspace.CurrentCamera.CFrame)
+      end)
+end)
+getgenv().AntiKickClient = true
+Main_Home:addToggle("Anti Kick Client", getgenv().AntiKickClient, function(Value)
+   getgenv().AntiKickClient = Value
+end)
+task.spawn(function()
+   while wait() do
+   if getgenv().AntiKickClient then
+   loadstring(game:HttpGet('https://gitlab.com/Sky2836/BT/-/raw/main/
+antikickclient'))()
+end)
+Main_Home:addButton("Antilag - FPS", function()
+   local decalsyeeted = false
+   local g = game
+   local w = g.Workspace
+   local l = g.Lighting
+   local t = w.Terrain
+   t.WaterWaveSize = 0
+   t.WaterWaveSpeed = 0
+   t.WaterReflectance = 0
+   t.WaterTransparency = 0
+   l.GlobalShadows = false
+   l.FogEnd = 9e9
+   l.Brightness = 0
+   settings().Rendering.QualityLevel = "Level01"
+   for i, v in pairs(g:GetDescendants()) do
+   if v:IsA("Part") or v:IsA("Union") or v:IsA("CornerWedgePart") or
+v:IsA("TrussPart") then
+v.Material = "Plastic"
+   v.Reflectance = 0
+   elseif v:IsA("Decal") or v:IsA("Texture") and decalsyeeted then
+   v.Transparency = 1
+   elseif v:IsA("ParticleEmitter") or v:IsA("Trail") then
+   v.Lifetime = NumberRange.new(0)
+   elseif v:IsA("Explosion") then
+may close this   banner to continue witvvh ..onBBlyll eaassssettnPPtiarrl ceeossosskiuuesrr. Peer  iva==c  y 11Policy
+Storage Prefer  ences    v.BlastRadius  ==  11
+   elseif v:IsA("Fire") or v:IsA("SpotLight") or v:IsA("Smoke") or
+v:IsA("Sparkles") then
+Storag  e    v.Enabled  ==  false
+   elseif v:IsA("MeshPart") then
+   v.Material = "Plastic"
+   v.Reflectance = 0
+   v.TextureID = 10385902758728957
+   for i, e in pairs(l:GetChildren()) do
+   if e:IsA("BlurEffect") or e:IsA("SunRaysEffect") or
+e:IsA("ColorCorrectionEffect") or e:IsA("BloomEffect") or
+e:IsA("DepthOfFieldEffect") then
+   e.Enabled = false
+
+-- ====== PAGE 3/197 ======
+end)
+local Home_Left = Tab.Tab_1:addSection()
+local Changelog = Home_Left:addMenu("Thông Tin")
+Changelog:addChangelog('Hê Con Mẹ Nó Lô Chúng Mày')
+Changelog:addChangelog('Hello Everyone  ')
+Changelog:addChangelog('Thông Tin Liên Hệ')
+Changelog:addChangelog('YTB: Tuấn Anh IOS')
+Changelog:addChangelog('Tik Tok: Tuấn Anh IOS')
+Changelog:addChangelog('FB : Tuấn Anh(TúnnAngg) ')
+Changelog:addChangelog('Tạm Biệt Tất Cả Chúng Mày')
+loadstring(game:HttpGet("https://raw.githubusercontent.com/AnhTuanDzai-Hub/
+FastAttackLoL/refs/heads/main/FastAttack.lua"))()
+wait(1)
+loadstring(game:HttpGet('https://raw.githubusercontent.com/S4nZz/bt_project/main/
+script'))()
+game:GetService("Players").LocalPlayer.PlayerGui.Main:FindFirstChild("ChooseTeam")
+   repeat wait()
+game:GetService("Players").LocalPlayer.PlayerGui:WaitForChild("Main").ChooseTeam.Vi
+sible == true then
+   if _G.Team == "Pirate" then
+pairs(getconnections(game:GetService("Players").LocalPlayer.PlayerGui.Main.ChooseTe
+am.Container.Pirates.Frame.ViewportFrame.TextButton.Activated)) do
+v.Function()
+   elseif _G.Team == "Marine" then
+pairs(getconnections(game:GetService("Players").LocalPlayer.PlayerGui.Main.ChooseTe
+am.Container.Marines.Frame.ViewportFrame.TextButton.Activated)) do
+v.Function()
+pairs(getconnections(game:GetService("Players").LocalPlayer.PlayerGui.Main.ChooseTe
+am.Container.Pirates.Frame.ViewportFrame.TextButton.Activated)) do
+Storage    v.Function()
+   until game.Players.LocalPlayer.Team ~= nil and game:IsLoaded()
+First_Sea = false
+Second_Sea = false
+Third_Sea = false
+local placeId = game.PlaceId
+
+-- ====== PAGE 4/197 ======
+if placeId == 2753915549 then
+   First_Sea = true
+elseif placeId == 4442272183 then
+   Second_Sea = true
+elseif placeId == 7449423635 then
+   Third_Sea = true
+function CheckLevel()
+   local Lv = game:GetService("Players").LocalPlayer.Data.Level.Value
+   if Lv == 1 or Lv <= 9 or _G.SelectMonster == "Bandit [Lv. 5]" then --
+   Ms = "Bandit"
+   NameQuest = "BanditQuest1"
+   QuestLv = 1
+   NameMon = "Bandit"
+   CFrameQ = CFrame.new(1060.9383544922, 16.455066680908, 1547.7841796875)
+   CFrameMon = CFrame.new(1038.5533447266, 41.296249389648,
+1576.5098876953)
+   elseif Lv == 10 or Lv <= 14 or _G.SelectMonster == "Monkey [Lv. 14]" then
+-- Monkey
+   Ms = "Monkey"
+   NameQuest = "JungleQuest"
+   QuestLv = 1
+   NameMon = "Monkey"
+   CFrameQ = CFrame.new(-1601.6553955078, 36.85213470459, 153.38809204102)
+   CFrameMon = CFrame.new(-1448.1446533203, 50.851993560791,
+63.60718536377)
+   elseif Lv == 15 or Lv <= 29 or _G.SelectMonster == "Gorilla [Lv. 20]" then
+-- Gorilla
+   Ms = "Gorilla"
+   NameQuest = "JungleQuest"
+   QuestLv = 2
+   NameMon = "Gorilla"
+   CFrameQ = CFrame.new(-1601.6553955078, 36.85213470459, 153.38809204102)
+   CFrameMon = CFrame.new(-1142.6488037109, 40.462348937988, -
+515.39227294922)
+   elseif Lv == 30 or Lv <= 39 or _G.SelectMonster == "Pirate [Lv. 35]" then
+-- Pirate
+   Ms = "Pirate"
+   NameQuest = "BuggyQuest1"
+   QuestLv = 1
+   NameMon = "Pirate"
+   CFrameQ = CFrame.new(-1140.1761474609, 4.752049446106, 3827.4057617188)
+   CFrameMon = CFrame.new(-1201.0881347656, 40.628940582275,
+3857.5966796875)
+   elseif Lv == 40 or Lv <= 59 or _G.SelectMonster == "Brute [Lv. 45]" then --
+   Ms = "Brute"
+   NameQuest = "BuggyQuest1"
+   QuestLv = 2
+   NameMon = "Brute"
+   CFrameQ = CFrame.new(-1140.1761474609, 4.752049446106, 3827.4057617188)
+   CFrameMon = CFrame.new(-1387.5324707031, 24.592035293579,
+4100.9575195313)
+   elseif Lv == 60 or Lv <= 74 or _G.SelectMonster == "Desert Bandit [Lv. 60]"
+then -- Desert Bandit
+
+-- ====== PAGE 5/197 ======
+   Ms = "Desert Bandit"
+   NameQuest = "DesertQuest"
+   QuestLv = 1
+   NameMon = "Desert Bandit"
+   CFrameQ = CFrame.new(896.51721191406, 6.4384617805481, 4390.1494140625)
+   CFrameMon = CFrame.new(984.99896240234, 16.109552383423, 4417.91015625)
+   elseif Lv == 75 or Lv <= 89 or _G.SelectMonster == "Desert Officer [Lv.
+70]" then -- Desert Officer
+   Ms = "Desert Officer"
+   NameQuest = "DesertQuest"
+   QuestLv = 2
+   NameMon = "Desert Officer"
+   CFrameQ = CFrame.new(896.51721191406, 6.4384617805481, 4390.1494140625)
+   CFrameMon = CFrame.new(1547.1510009766, 14.452038764954,
+4381.8002929688)
+   elseif Lv == 90 or Lv <= 99 or _G.SelectMonster == "Snow Bandit [Lv. 90]"
+then -- Snow Bandit
+   Ms = "Snow Bandit"
+   NameQuest = "SnowQuest"
+   QuestLv = 1
+   NameMon = "Snow Bandit"
+   CFrameQ = CFrame.new(1386.8073730469, 87.272789001465, -
+1298.3576660156)
+   CFrameMon = CFrame.new(1356.3028564453, 105.76865386963, -
+1328.2418212891)
+   elseif Lv == 100 or Lv <= 119 or _G.SelectMonster == "Snowman [Lv. 100]"
+then -- Snowman
+   Ms = "Snowman"
+   NameQuest = "SnowQuest"
+   QuestLv = 2
+   NameMon = "Snowman"
+   CFrameQ = CFrame.new(1386.8073730469, 87.272789001465, -
+1298.3576660156)
+   CFrameMon = CFrame.new(1218.7956542969, 138.01184082031, -
+1488.0262451172)
+   elseif Lv == 120 or Lv <= 149 or _G.SelectMonster == "Chief Petty Officer
+[Lv. 120]" then -- Chief Petty Officer
+   Ms = "Chief Petty Officer"
+   NameQuest = "MarineQuest2"
+   QuestLv = 1
+   NameMon = "Chief Petty Officer"
+   CFrameQ = CFrame.new(-5035.49609375, 28.677835464478, 4324.1840820313)
+   CFrameMon = CFrame.new(-4931.1552734375, 65.793113708496,
+4121.8393554688)
+   elseif Lv == 150 or Lv <= 174 or _G.SelectMonster == "Sky Bandit [Lv. 150]"
+then -- Sky Bandit
+   Ms = "Sky Bandit"
+   NameQuest = "SkyQuest"
+   QuestLv = 1
+   CFrameQ = CFrame.new(-4842.1372070313, 717.69543457031, -
+Perso22na66li22za33tio..n00448833339988443388))
+   CFrameMon = CFrame.new(-4955.6411132813, 365.46365356445, -
+Analyt22ic99s0088..11886655223344337755))
+   elseif Lv == 175 or Lv <= 189 or _G.SelectMonster == "Dark Master [Lv.
+175]" then -- Dark Master
+   Ms = "Dark Master"
+   NameQuest = "SkyQuest"
+   QuestLv = 2
+
+-- ====== PAGE 6/197 ======
+   NameMon = "Dark Master"
+   CFrameQ = CFrame.new(-4842.1372070313, 717.69543457031, -
+2623.0483398438)
+   CFrameMon = CFrame.new(-5148.1650390625, 439.04571533203, -
+2332.9611816406)
+   elseif Lv == 190 or Lv <= 209 or _G.SelectMonster == "Prisoner [Lv. 190]"
+then -- Prisoner
+   Ms = "Prisoner"
+   NameQuest = "PrisonerQuest"
+   QuestLv = 1
+   NameMon = "Prisoner"
+   CFrameQ = CFrame.new(5310.60547, 0.350014925, 474.946594, 0.0175017118,
+0, 0.999846935, 0, 1, 0, -0.999846935, 0, 0.0175017118)
+   CFrameMon = CFrame.new(4937.31885, 0.332031399, 649.574524,
+0.694649816, 0, -0.719348073, 0, 1, 0, 0.719348073, 0, 0.694649816)
+   elseif Lv == 210 or Lv <= 249 or _G.SelectMonster == "Dangerous Prisoner
+[Lv. 210]" then -- Dangerous Prisoner
+   Ms = "Dangerous Prisoner"
+   NameQuest = "PrisonerQuest"
+   QuestLv = 2
+   NameMon = "Dangerous Prisoner"
+   CFrameQ = CFrame.new(5310.60547, 0.350014925, 474.946594, 0.0175017118,
+0, 0.999846935, 0, 1, 0, -0.999846935, 0, 0.0175017118)
+   CFrameMon = CFrame.new(5099.6626, 0.351562679, 1055.7583, 0.898906827,
+0, -0.438139856, 0, 1, 0, 0.438139856, 0, 0.898906827)
+   elseif Lv == 250 or Lv <= 274 or _G.SelectMonster == "Toga Warrior [Lv.
+250]" then -- Toga Warrior
+   Ms = "Toga Warrior"
+   NameQuest = "ColosseumQuest"
+   QuestLv = 1
+   NameMon = "Toga Warrior"
+   CFrameQ = CFrame.new(-1577.7890625, 7.4151420593262, -2984.4838867188)
+   CFrameMon = CFrame.new(-1872.5166015625, 49.080215454102, -
+2913.810546875)
+   elseif Lv == 275 or Lv <= 299 or _G.SelectMonster == "Gladiator [Lv. 275]"
+then -- Gladiator
+   NameQuest = "ColosseumQuest"
+   QuestLv = 2
+   NameMon = "Gladiator"
+   CFrameQ = CFrame.new(-1577.7890625, 7.4151420593262, -2984.4838867188)
+   CFrameMon = CFrame.new(-1521.3740234375, 81.203170776367, -
+3066.3139648438)
+   elseif Lv == 300 or Lv <= 324 or _G.SelectMonster == "Military Soldier [Lv.
+300]" then -- Military Soldier
+   Ms = "Military Soldier"
+   NameQuest = "MagmaQuest"
+   QuestLv = 1
+   NameMon = "Military Soldier"
+   CFrameMon = CFrame.new(-5369.0004882813, 61.24352645874, 8556.4921875)
+Perso  nalization  elseif  Lv  ==  325  or  Lv  <=  374  or  _G.SelectMonster  ==  "Military  Spy  [Lv.
+325]" then -- Military Spy
+Analyt  ics    Ms  ==  "Military  Spy"
+   NameQuest = "MagmaQuest"
+   QuestLv = 2
+   NameMon = "Military Spy"
+   CFrameQ = CFrame.new(-5316.1157226563, 12.262831687927, 8517.00390625)
+
+-- ====== PAGE 7/197 ======
+   CFrameMon = CFrame.new(-5787.00293, 75.8262634, 8651.69922,
+0.838590562, 0, -0.544762194, 0, 1, 0, 0.544762194, 0, 0.838590562)
+   elseif Lv == 375 or Lv <= 399 or _G.SelectMonster == "Fishman Warrior [Lv.
+375]" then -- Fishman Warrior
+Ms = "Fishman Warrior"
+   NameQuest = "FishmanQuest"
+   QuestLv = 1
+   NameMon = "Fishman Warrior"
+   CFrameQ = CFrame.new(61122.65234375, 18.497442245483, 1569.3997802734)
+   CFrameMon = CFrame.new(60844.10546875, 98.462875366211,
+1298.3985595703)
+   if (LevelFarmQuest or LevelFarmNoQuest or SelectMonster_Quest_Farm or
+SelectMonster_NoQuest_Farm or DevilMastery_Farm) and (CFrameMon.Position -
+game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude > 3000 then
+game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("requestEntrance",
+Vector3.new(61163.8515625, 11.6796875, 1819.7841796875))
+   elseif Lv == 400 or Lv <= 449 or _G.SelectMonster == "Fishman Commando [Lv.
+400]" then -- Fishman Commando
+   Ms = "Fishman Commando"
+   NameQuest = "FishmanQuest"
+   QuestLv = 2
+   NameMon = "Fishman Commando"
+   CFrameQ = CFrame.new(61122.65234375, 18.497442245483, 1569.3997802734)
+   CFrameMon = CFrame.new(61738.3984375, 64.207321166992, 1433.8375244141)
+   if (LevelFarmQuest or LevelFarmNoQuest or SelectMonster_Quest_Farm or
+SelectMonster_NoQuest_Farm or DevilMastery_Farm) and (CFrameMon.Position -
+game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude > 3000 then
+game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("requestEntrance",
+Vector3.new(61163.8515625, 11.6796875, 1819.7841796875))
+   elseif Lv == 450 or Lv <= 474 or _G.SelectMonster == "God's Guard [Lv.
+450]" then -- God's Guard
+   Ms = "God's Guard"
+   QuestLv = 1
+   NameMon = "God's Guard"
+   CFrameQ = CFrame.new(-4721.8603515625, 845.30297851563, -
+1953.8489990234)
+   CFrameMon = CFrame.new(-4628.0498046875, 866.92877197266, -
+1931.2352294922)
+   if (LevelFarmQuest or LevelFarmNoQuest or SelectMonster_Quest_Farm or
+SelectMonster_NoQuest_Farm or DevilMastery_Farm) and (CFrameMon.Position -
+game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude > 3000 then
+game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("requestEntrance",
+Vector3.new(-4607.82275, 872.54248, -1667.55688))
+   elseif Lv == 475 or Lv <= 524 or _G.SelectMonster == "Shanda [Lv. 475]"
+then -- Shanda
+   Ms = "Shanda"
+Analyt  ics    NameQuest  ==  "SkyExp1Quest"
+   QuestLv = 2
+   NameMon = "Shanda"
+   CFrameQ = CFrame.new(-7863.1596679688, 5545.5190429688, -
+378.42266845703)
+
+-- ====== PAGE 8/197 ======
+   CFrameMon = CFrame.new(-7685.1474609375, 5601.0751953125, -
+441.38876342773)
+   if (LevelFarmQuest or LevelFarmNoQuest or SelectMonster_Quest_Farm or
+SelectMonster_NoQuest_Farm or DevilMastery_Farm) and (CFrameMon.Position -
+game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude > 3000 then
+game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("requestEntrance",
+Vector3.new(-7894.6176757813, 5547.1416015625, -380.29119873047))
+   elseif Lv == 525 or Lv <= 549 or _G.SelectMonster == "Royal Squad [Lv.
+525]" then -- Royal Squad
+   Ms = "Royal Squad"
+   NameQuest = "SkyExp2Quest"
+   QuestLv = 1
+   NameMon = "Royal Squad"
+   CFrameQ = CFrame.new(-7903.3828125, 5635.9897460938, -1410.923828125)
+   CFrameMon = CFrame.new(-7654.2514648438, 5637.1079101563, -
+1407.7550048828)
+   elseif Lv == 550 or Lv <= 624 or _G.SelectMonster == "Royal Soldier [Lv.
+550]" then -- Royal Soldier
+   Ms = "Royal Soldier"
+   NameQuest = "SkyExp2Quest"
+   QuestLv = 2
+   NameMon = "Royal Soldier"
+   CFrameQ = CFrame.new(-7903.3828125, 5635.9897460938, -1410.923828125)
+   CFrameMon = CFrame.new(-7760.4106445313, 5679.9077148438, -
+1884.8112792969)
+   elseif Lv == 625 or Lv <= 649 or _G.SelectMonster == "Galley Pirate [Lv.
+625]" then -- Galley Pirate
+   Ms = "Galley Pirate"
+   NameQuest = "FountainQuest"
+   QuestLv = 1
+   NameMon = "Galley Pirate"
+   CFrameQ = CFrame.new(5258.2788085938, 38.526931762695, 4050.044921875)
+   CFrameMon = CFrame.new(5557.1684570313, 152.32717895508,
+3998.7758789063)
+   elseif Lv >= 650 or _G.SelectMonster == "Galley Captain [Lv. 650]" then --
+Personal data m  ay be processed to dMMoss th  e== fo  ll""owGGiaangll: lluseeeyy p  reCCciaasepp gtteaaoiilonnca""tion data and actively scan device characteristics for identi
